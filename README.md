@@ -13,7 +13,7 @@ A Python script for summarizing your Formula 1 Fantasy league standings, team pe
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/shyamddesai/f1-fantasy-dashboard.git
+git clone https://github.com/shyamddesai/F1FantasyDashboard.git
 cd f1-fantasy-dashboard
 ```
 

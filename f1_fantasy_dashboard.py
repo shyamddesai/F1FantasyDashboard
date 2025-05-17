@@ -396,17 +396,20 @@ def get_driver_stats():
             player_id = int(item["PlayerId"])
             entity_map[player_id] = full_name
 
+            # Ignore None entries when missing data at the start of a race weekend
+            additional_stats = item.get("AdditionalStats") or {}
+
             stats = {
                 "Name": full_name,
                 "Team": item.get("TeamName"),
                 "Value (M)": float(item.get("Value", 0)),
                 "Total Points": int(float(item.get("OverallPpints", 0))),
-                "Position Points": int(item["AdditionalStats"].get("total_position_pts", 0.0)),
-                "DNF/DQ": int(item["AdditionalStats"].get("total_dnf_dq_pts", 0.0)),
-                "Overtaking": int(item["AdditionalStats"].get("overtaking_pts", 0.0)),
-                "Fastest Lap": int(item["AdditionalStats"].get("fastest_lap_pts", 0.0)),
-                "DotD": int(item["AdditionalStats"].get("dotd_pts", 0.0)),
-                "Value for Money": item["AdditionalStats"].get("value_for_money", 0.0),
+                "Position Points": int(additional_stats.get("total_position_pts", 0.0)),
+                "DNF/DQ": int(additional_stats.get("total_dnf_dq_pts", 0.0)),
+                "Overtaking": int(additional_stats.get("overtaking_pts", 0.0)),
+                "Fastest Lap": int(additional_stats.get("fastest_lap_pts", 0.0)),
+                "DotD": int(additional_stats.get("dotd_pts", 0.0)),
+                "Value for Money": additional_stats.get("value_for_money", 0.0),
             }
             drivers.append(stats)
 
@@ -506,17 +509,17 @@ if __name__ == "__main__":
             print("Error: Race number must be an integer.")
             sys.exit(1)
 
-    RACE_NUMBER = 6 # TODO: Automate getting the latest race number
+    RACE_NUMBER = 7 # TODO: Automate getting the latest race number
     LL_DELTA = 128 # Scuderia Sorpasso Jeddah LL Delta
     # TODO: Automate populating players.json given league ID
 
-    print_driver_table()
-    print_constructor_table()
+    # print_driver_table()
+    # print_constructor_table()
 
     get_league_summary(players, headers, RACE_NUMBER)
-    get_league_summary(players, headers, RACE_NUMBER, LL_DELTA=LL_DELTA)
+    # get_league_summary(players, headers, RACE_NUMBER, LL_DELTA=LL_DELTA)
     get_league_summary(players, headers, RACE_NUMBER, "Budget")
     get_team_compositions(players, headers, RACE_NUMBER)
     
-    season_summary(players, headers, RACE_NUMBER, include_all_teams=True)
-    cumulative_gap_from_leader(players, headers, RACE_NUMBER, include_all_teams=False)
+    # season_summary(players, headers, RACE_NUMBER, include_all_teams=True)
+    # cumulative_gap_from_leader(players, headers, RACE_NUMBER, include_all_teams=False)
