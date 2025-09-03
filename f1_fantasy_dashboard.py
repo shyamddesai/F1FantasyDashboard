@@ -415,6 +415,17 @@ def get_driver_stats():
 
     return drivers, entity_map
 
+def get_current_race_number():
+    RACE_NUMBER_URL = "https://fantasy.formula1.com/feeds/limits/constraints.json"
+    
+    try:
+        response = requests.get(RACE_NUMBER_URL)
+        matchday_id = response.json()["Data"]["Value"]["GamedayId"]
+        return matchday_id
+    except Exception as e:
+        print(f"⚠️ Could not fetch current race number: {e}")
+        return None
+
 def get_constructor_stats():
     data = fetch_f1_data(RACE_NUMBER)
     constructors = []
@@ -509,7 +520,9 @@ if __name__ == "__main__":
             print("Error: Race number must be an integer.")
             sys.exit(1)
 
-    RACE_NUMBER = 7 # TODO: Automate getting the latest race number
+    # To override for past races, replace with RACE_NUMBER = 16 for Monza
+    RACE_NUMBER = get_current_race_number()
+
     LL_DELTA = 128 # Scuderia Sorpasso Jeddah LL Delta
     # TODO: Automate populating players.json given league ID
 
@@ -519,7 +532,9 @@ if __name__ == "__main__":
     get_league_summary(players, headers, RACE_NUMBER)
     # get_league_summary(players, headers, RACE_NUMBER, LL_DELTA=LL_DELTA)
     get_league_summary(players, headers, RACE_NUMBER, "Budget")
-    get_team_compositions(players, headers, RACE_NUMBER)
+
+    # get_team_compositions(players, headers, RACE_NUMBER-1)
+    # get_team_compositions(players, headers, RACE_NUMBER)
     
     # season_summary(players, headers, RACE_NUMBER, include_all_teams=True)
     # cumulative_gap_from_leader(players, headers, RACE_NUMBER, include_all_teams=False)
