@@ -1,11 +1,12 @@
 # F1 Fantasy League Dashboard
-A Python script for summarizing your Formula 1 Fantasy league standings, team performance, and fair comparisons using chip usage adjustments.
+A Python dashboard for summarizing your Formula 1 Fantasy league standings, team performance, and making fair comparisons with chip usage adjustments.
 
 ## Features
-* Fetch team performance by race and totals
-* Identify chip usage (e.g., Limitless, Wildcard)
-* Adjust for unused Limitless chip ("LL Delta") to compare standings fairly
-* Customize for budget or points tracking
+* Fetches your league players & their teams from F1 Fantasy
+* Identifies chip usage (Limitless, Wildcard, Final Fix, etc.)
+* Adjust for unused Limitless chip ("LL Delta") simulate scenarios where all teams used it
+* Compare team lineups, drivers, and constructors for each race
+* Visualize cumulative points & points gap vs leader across the season
 
 ---
 
@@ -14,28 +15,62 @@ A Python script for summarizing your Formula 1 Fantasy league standings, team pe
 
 ```bash
 git clone https://github.com/shyamddesai/F1FantasyDashboard.git
-cd f1-fantasy-dashboard
+cd F1FantasyDashboard
 ```
 
 ### 2. Create the required files
 #### `cookie.json`
-Stores your session cookies so the script can make authenticated requests.
-The JSON structure should match what you get when copying cookies from your browser's developer tools.
+Store your session cookies so the script can authenticate requests to the F1 Fantasy API.
+
+How to obtain the request cookie:
+1. Log in to [https://fantasy.formula1.com](https://fantasy.formula1.com)
+2. Go to "My Team" or open any of your Private Leagues.
+3. Press F12 (open Developer Tools) → click the Network tab.
+4. In the search/filter box, type `raceday` to find a request like raceday_en.json 
+> Any JSON API request works, but raceday is an easy one to spot
+5. Click that request → go to the Cookies tab → Right‑click → Copy All cookies.
+6. Paste everything into cookie.json.
+
 
 ```json
 {
   "Request Cookies": {
-    "entitlement_token": "...",
+    "consentDate": "...",
+    "consentUUID": "..."
     "F1_FANTASY_007": "...",
-    "login-session": "...",
     ...
+    "login-session": "...",
+    "reese84": "..."
   }
 }
 ```
-You can obtain these by logging into [https://fantasy.formula1.com](https://fantasy.formula1.com), opening Developer Tools (F12), inspecting any API requests under the **Network** tab, and copying the request cookies.
+The JSON structure should match exactly what you get when copying cookies from your browser’s developer tools.
+
+⚠️ Note: Cookies expire. If API calls start failing, you need to repeat the steps above and refresh your cookie.json.
+
+
+#### `.env`
+Contains your UUID and League ID so the script can auto‑fetch all players.
+1. In DevTools (still on the Network tab), filter by league.
+2. Find a request URL that looks like this:
+```
+/services/user/leaderboard/abcdef12-3456-7890-abcd-ef1234567890/pvtleagueuserrankget/1/1234567/0/1/1/10/
+```
+3. From that URL:
+- abcdef12-3456-7890-abcd-ef1234567890 → this is your PLAYER_UUID
+- 1234567 → this is your LEAGUE_ID
+4. Put them into .env:
+```
+PLAYER_UUID=abcdef12-3456-7890-abcd-ef1234567890
+PLAYER_LEAGUE=1234567
+```
+
 
 #### `players.json`
-Holds your league player/team configuration. Each player entry includes their F1 Fantasy uuid, userid, and a list of team objects (each with name and teamno).
+This file is automatically populated on first run using your .env. 
+Each entry links a UUID → user ID → list of fantasy teams.
+
+(Optional) If you want to include an extra team (for example, one of your second/third teams outside the league), you can add it manually. Just add "name" and "teamno" to the "teams" list for yourself:
 ```json
 [
   {
@@ -43,7 +78,7 @@ Holds your league player/team configuration. Each player entry includes their F1
     "userid": "123456",
     "teams": [
       {"name": "Scuderia Sorpasso", "teamno": 1},
-      {"name": "Mercedes Wunderwaffe", "teamno": 2}
+      {"name": "Mercedes Wunderwaffe", "teamno": 2} // Adding this team
     ]
   },
   {
@@ -55,7 +90,7 @@ Holds your league player/team configuration. Each player entry includes their F1
   }
 ]
 ```
-You can find the `uuid`, `userid`, and `teamno` values using your browser developer tools while inspecting your fantasy teams.
+This is useful if you want to include a personal secondary team for comparison.
 
 ---
 
@@ -73,48 +108,35 @@ python f1_fantasy_dashboard.py
 ```
 
 ### Configuration Variables
-Modify the following values at the bottom of the script to control output:
+You can configure core behavior at the bottom of the script:
 ```python
 RACE_NUMBER = 6  # The race number to summarize stats up to.
-                 # Example: Set to 6 for data upto the Miami GP 2025.
+                 # Default: Fetch current race from the API
+                 # You can rewrite it to 6 for data upto the Miami GP 2025.
 
 LL_DELTA = 128   # Points gained from using the Limitless chip.
-                 # Used to estimate standings if everyone used LL, either perfectly or sub-optimally.
+                 # Add points to simulate balanced LL usage, either perfectly or sub-optimally.
 ```
 
-At the moment, to switch between the different available outputs, you'll need to comment or uncomment the relevant function calls in the script:
+At the moment, outputs are toggled by commenting / uncommenting function calls:
 ```python
-# Print current driver and constructor statistics
-print_driver_table()
-print_constructor_table()
-
-# Show league standings
+# League Standings
 get_league_summary(players, headers, RACE_NUMBER)
-get_league_summary(players, headers, RACE_NUMBER, LL_DELTA=LL_DELTA)  # With Limitless adjustment
-get_league_summary(players, headers, RACE_NUMBER, "Budget")  # Show budget rankings
+get_league_summary(players, headers, RACE_NUMBER, "Budget")
+get_league_summary(players, headers, RACE_NUMBER, LL_DELTA=LL_DELTA) # LL-adjusted points
 
-# Show team lineups
-get_team_compositions(players, headers, RACE_NUMBER)
+# Team Lineups
+get_team_compositions(players, headers, RACE_NUMBER - 1)  # Previous race
+get_team_compositions(players, headers, RACE_NUMBER)      # Current race
 
-# Season overview
-season_summary(players, headers, RACE_NUMBER, include_all_teams=True)
-cumulative_gap_from_leader(players, headers, RACE_NUMBER, include_all_teams=False)
-```
+# Season Overview
+season_summary(players, headers, RACE_NUMBER, include_all_teams=True)               # Season progression
+cumulative_gap_from_leader(players, headers, RACE_NUMBER, include_all_teams=False)  # Points gap vs leader
 
----
-
-## Fantasy Statistics
-### Driver Statistics
-```python
+# Driver/Constructor Asset Statistics
 print_driver_table()
-```
-![Driver Table](https://github.com/user-attachments/assets/5c2604cc-6cf9-42e1-ac1c-9fa22046b261)
-
-### Constructor Statistics
-```python
 print_constructor_table()
 ```
-![Constructor Table](https://github.com/user-attachments/assets/f8718dea-ca9b-46b2-9fe4-6305b7a14caa)
 
 ---
 
@@ -166,11 +188,24 @@ cumulative_gap_from_leader(players, headers, RACE_NUMBER, include_all_teams=Fals
 Show how far each team is from the league leader at each race. Helps identify which weekends were pivotal turning points.
 ![Gap to Leader](https://github.com/user-attachments/assets/ce33696c-5ea8-486f-80c2-6f6a1d1d9c3e)
 
+## Fantasy Statistics
+### Driver Statistics
+```python
+print_driver_table()
+```
+![Driver Table](https://github.com/user-attachments/assets/5c2604cc-6cf9-42e1-ac1c-9fa22046b261)
+
+### Constructor Statistics
+```python
+print_constructor_table()
+```
+![Constructor Table](https://github.com/user-attachments/assets/f8718dea-ca9b-46b2-9fe4-6305b7a14caa)
+
+
 ---
 
 ## Coming Soon
-* Automatically fetch the current/latest race number from the API
-* Auto-populate `players.json` using your league ID
-* Build a simple console-based UI to choose actions (instead of commenting/uncommenting functions)
+* Interactive console-based UI to choose actions (instead of commenting/uncommenting functions)
 * Add command-line arguments for common operations (e.g. `--summary`, `--budget`, `--ll-adjust`)
 * Add request/result caching to avoid redundant API calls and improve performance
+* Export tables to CSV/Excel for deeper analysis

@@ -1,0 +1,16 @@
+{
+  "Request Cookies": {
+    "consentDate": "2025-03-12T03:16:46.181Z",
+    "consentUUID": "xxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx_32_33_35_38_41",
+    "F1_FANTASY_007": "eyJhbGciOiJIUzI1NiIsInR5cCI6...fakeJWTtoken...xyz",
+    "isFirstRendering": "true",
+    "LEAGUE_BUSTER": "1234567890123",
+    "login": "{\"event\":\"login\",\"componentId\":\"component_login_page\",\"actionType\":\"success\"}",
+    "login-session": "{\"data\":{\"subscriptionToken\":\"eyJraWQiOiIxIiwiYWxnIjoiUlMyNTYifQ....fakeSessionToken...xyz\"}}",
+    "reese84": "3:xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx==:moreFakeCookieDataHere",
+    "si-mix-api-buster": "20250101010101",
+    "si-mix-api-live-buster": "null",
+    "TEAM_BUSTER": "1234567890123",
+    "user-metadata": "{\"subscriptionSource\":\"\",\"userRegistrationLevel\":\"full\",\"subscribedProduct\":\"\",\"subscriptionExpiry\":\"99/99/9999\"}"
+  }
+}
