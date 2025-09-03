@@ -417,7 +417,7 @@ def get_driver_stats():
 
 def get_current_race_number():
     RACE_NUMBER_URL = "https://fantasy.formula1.com/feeds/limits/constraints.json"
-    
+
     try:
         response = requests.get(RACE_NUMBER_URL)
         matchday_id = response.json()["Data"]["Value"]["GamedayId"]
@@ -513,6 +513,12 @@ def extract_race_locations():
 # ================================
 
 if __name__ == "__main__":
+    # ------ Race Number Configuration ------
+    # By default, use the current race number from the API.
+    # You can override via:
+    #   1. Command-line argument: python f1_fantasy_dashboard.py 16
+    #   2. Hardcoding: RACE_NUMBER = 16  # e.g., for Monza
+    RACE_NUMBER = get_current_race_number()
     if len(sys.argv) > 1:
         try:
             RACE_NUMBER = int(sys.argv[1]) # Override race number from console argument
@@ -520,21 +526,24 @@ if __name__ == "__main__":
             print("Error: Race number must be an integer.")
             sys.exit(1)
 
-    # To override for past races, replace with RACE_NUMBER = 16 for Monza
-    RACE_NUMBER = get_current_race_number()
-
+    # Adjustment to estimate standings if everyone used LL chip
     LL_DELTA = 128 # Scuderia Sorpasso Jeddah LL Delta
+
     # TODO: Automate populating players.json given league ID
 
-    # print_driver_table()
-    # print_constructor_table()
-
+    # ------ Basic Summaries ------
     get_league_summary(players, headers, RACE_NUMBER)
-    # get_league_summary(players, headers, RACE_NUMBER, LL_DELTA=LL_DELTA)
     get_league_summary(players, headers, RACE_NUMBER, "Budget")
 
-    # get_team_compositions(players, headers, RACE_NUMBER-1)
-    # get_team_compositions(players, headers, RACE_NUMBER)
-    
-    # season_summary(players, headers, RACE_NUMBER, include_all_teams=True)
-    # cumulative_gap_from_leader(players, headers, RACE_NUMBER, include_all_teams=False)
+    # ------ Advanced Summaries ------
+    # get_league_summary(players, headers, RACE_NUMBER, LL_DELTA=LL_DELTA) # LL adjusted points
+    season_summary(players, headers, RACE_NUMBER, include_all_teams=True)
+    cumulative_gap_from_leader(players, headers, RACE_NUMBER, include_all_teams=False)
+
+    # ------ Team Lineups ------
+    # get_team_compositions(players, headers, RACE_NUMBER-1) # Previous race
+    # get_team_compositions(players, headers, RACE_NUMBER) # Current race
+
+    # ------ Driver/Constructor Stats ------
+    # print_driver_table()
+    # print_constructor_table()
