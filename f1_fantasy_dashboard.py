@@ -1,12 +1,15 @@
-import sys
-import requests
 import os
+import sys
 import json
 import hashlib
-from urllib.parse import urlparse
+import requests
+import matplotlib.pyplot as plt
+from dotenv import load_dotenv
+from urllib.parse import unquote
 from datetime import datetime
 from tabulate import tabulate
-import matplotlib.pyplot as plt
+
+load_dotenv()
 
 with open("cookie.json", "r", encoding="utf-8") as f:
     cookie_dict = json.load(f)
@@ -23,8 +26,11 @@ headers = {
     "Cookie": cookie_header
 }
 
-with open("./players.json", "r", encoding="utf-8") as f:
-    players = json.load(f)
+try:
+    with open("./players.json", "r", encoding="utf-8") as f:
+        players = json.load(f)
+except (json.decoder.JSONDecodeError, FileNotFoundError):
+    players = {}
 
 # CACHE_DIR = "cache"
 # os.makedirs(CACHE_DIR, exist_ok=True)
@@ -85,6 +91,49 @@ with open("./players.json", "r", encoding="utf-8") as f:
     #     os.remove(os.path.join(CACHE_DIR, file))
 
 # ================================
+
+def fetch_league_players(player_uuid, league_id, save_path="players.json"):
+    if os.path.exists(save_path) and os.path.getsize(save_path) > 0:
+        with open(save_path, "r", encoding="utf-8") as f:
+            return json.load(f)
+        
+    if not player_uuid or not league_id:
+        print(f"Invalid input: {player_uuid}, {league_id}")
+        print("Provide a valid player UUID and league ID.")
+        return
+        
+    LEAGUE_URL = f"https://fantasy.formula1.com/services/user/leaderboard/{player_uuid}/pvtleagueuserrankget/1/{league_id}/0/1/1/1000000/"
+
+    resp = requests.get(LEAGUE_URL, headers=headers)
+
+    data = resp.json()
+    mem_ranks = data["Data"]["Value"]["memRank"]
+    league_name = unquote(data["Data"]["Value"]["leagueInfo"]["leagueName"])
+
+    league_players = {}
+
+    for entry in mem_ranks:
+        guid = entry["guid"]  # uuid-0-userid
+        uuid = guid.split("-0-")[0]
+        userid = guid.split("-0-")[-1]
+
+        team_info = {
+            "name": unquote(entry["teamName"]),
+            "teamno": entry["teamNo"]
+        }
+
+        if uuid not in league_players:
+            league_players[uuid] = {"uuid": uuid, "userid": userid, "teams": []}
+
+        league_players[uuid]["teams"].append(team_info)
+
+    players_list = list(league_players.values())
+
+    with open(save_path, "w", encoding="utf-8") as f:
+        json.dump(players_list, f, indent=2, separators=(',', ': '))
+
+    print(f"Saved {len(players_list)} players from {league_name} to {save_path}")
+    return players_list
 
 def build_player_team_url(uuid, userid, teamno=1, matchday=1):
     return f"https://fantasy.formula1.com/services/user/opponentteam/opponentgamedayplayerteamget/1/{uuid}-0-{userid}/{teamno}/{matchday}/1"
@@ -513,12 +562,6 @@ def extract_race_locations():
 # ================================
 
 if __name__ == "__main__":
-    # ------ Race Number Configuration ------
-    # By default, use the current race number from the API.
-    # You can override via:
-    #   1. Command-line argument: python f1_fantasy_dashboard.py 16
-    #   2. Hardcoding: RACE_NUMBER = 16  # e.g., for Monza
-    RACE_NUMBER = get_current_race_number()
     if len(sys.argv) > 1:
         try:
             RACE_NUMBER = int(sys.argv[1]) # Override race number from console argument
@@ -526,24 +569,49 @@ if __name__ == "__main__":
             print("Error: Race number must be an integer.")
             sys.exit(1)
 
-    # Adjustment to estimate standings if everyone used LL chip
-    LL_DELTA = 128 # Scuderia Sorpasso Jeddah LL Delta
+    # ================================
+    # 🎯 Race Configuration
+    # ================================
+    # By default, use the current race number from the Fantasy F1 API
+    # You can override via:
+    #   1. Command-line argument: python f1_fantasy_dashboard.py 16
+    #   2. Hardcoding: RACE_NUMBER = 16  # e.g., for Monza
+    RACE_NUMBER = get_current_race_number()
 
-    # TODO: Automate populating players.json given league ID
+    # Add a fixed points delta as if every manager had used LL
+    LL_DELTA = 128
 
-    # ------ Basic Summaries ------
-    get_league_summary(players, headers, RACE_NUMBER)
-    get_league_summary(players, headers, RACE_NUMBER, "Budget")
+    # ================================
+    # 🏎️ Fetch League Players
+    # ================================
+    # Automatically pulls all participants and their team entries
+    # Requires your player UUID + league ID from F1 Fantasy website
+    players = fetch_league_players(
+        player_uuid=os.getenv("PLAYER_UUID"),
+        league_id=os.getenv("PLAYER_LEAGUE")
+    )
 
-    # ------ Advanced Summaries ------
-    # get_league_summary(players, headers, RACE_NUMBER, LL_DELTA=LL_DELTA) # LL adjusted points
-    season_summary(players, headers, RACE_NUMBER, include_all_teams=True)
-    cumulative_gap_from_leader(players, headers, RACE_NUMBER, include_all_teams=False)
+    # ================================
+    # 📊 Basic League Summaries
+    # ================================
+    # get_league_summary(players, headers, RACE_NUMBER)
+    # get_league_summary(players, headers, RACE_NUMBER, "Budget")
 
-    # ------ Team Lineups ------
-    # get_team_compositions(players, headers, RACE_NUMBER-1) # Previous race
-    # get_team_compositions(players, headers, RACE_NUMBER) # Current race
+    # ================================
+    # 🔍 Advanced Summaries
+    # ================================
+    # get_league_summary(players, headers, RACE_NUMBER, LL_DELTA=LL_DELTA)   # LL-adjusted points
+    # season_summary(players, headers, RACE_NUMBER, include_all_teams=True)  # Season progression
+    # cumulative_gap_from_leader(players, headers, RACE_NUMBER)              # Points gap vs leader
 
-    # ------ Driver/Constructor Stats ------
+    # ================================
+    # 🧑‍🤝‍🧑 Team Lineups
+    # ================================
+    # get_team_compositions(players, headers, RACE_NUMBER - 1)  # Previous race
+    # get_team_compositions(players, headers, RACE_NUMBER)      # Current race
+    
+    # ================================
+    # 📈 Driver/Constructor Asset Stats
+    # ================================
     # print_driver_table()
     # print_constructor_table()
