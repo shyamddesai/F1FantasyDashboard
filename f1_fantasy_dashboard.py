@@ -1,15 +1,15 @@
 import os
 import sys
 import json
-import hashlib
 import requests
 import matplotlib.pyplot as plt
-from dotenv import load_dotenv
+from rich.console import Console
+from rich.table import Table
 from urllib.parse import unquote
-from datetime import datetime
-from tabulate import tabulate
+from dotenv import load_dotenv
 
 load_dotenv()
+console = Console()
 
 with open("cookie.json", "r", encoding="utf-8") as f:
     cookie_dict = json.load(f)
@@ -31,64 +31,6 @@ try:
         players = json.load(f)
 except (json.decoder.JSONDecodeError, FileNotFoundError):
     players = {}
-
-# CACHE_DIR = "cache"
-# os.makedirs(CACHE_DIR, exist_ok=True)
-
-# def strip_meta_timestamps(data):
-#     data = dict(data)  # shallow copy
-#     data.pop("Meta", None)
-#     data.pop("FeedTime", None)
-#     return data
-
-# def fetch_with_cache(url, headers=None):
-#     # Identify category for subdirectory
-#     parsed_url = urlparse(url)
-#     path_parts = parsed_url.path.strip("/").split("/")
-#     category = path_parts[1] if len(path_parts) > 1 else "misc"
-#     sub_cache_dir = os.path.join(CACHE_DIR, category)
-#     os.makedirs(sub_cache_dir, exist_ok=True)
-
-#     # Cache key for base comparison
-#     cache_key = hashlib.md5((url + json.dumps(headers or {}, sort_keys=True)).encode()).hexdigest()
-#     base_cache_path = os.path.join(sub_cache_dir, f"{cache_key}.json")
-
-#     # Fetch fresh data
-#     response = requests.get(url, headers=headers)
-#     response.raise_for_status()
-#     new_data = response.json()
-
-#     # Check existing cache
-#     if os.path.exists(base_cache_path):
-#         with open(base_cache_path, "r", encoding="utf-8") as f:
-#             old_data = json.load(f)
-#         if strip_meta_timestamps(old_data) == strip_meta_timestamps(new_data):
-#             print(f"No meaningful change for {url}, cache not updated.")
-#             return new_data
-
-#     # Get timestamp from FeedTime or fallback to current UTC
-#     try:
-#         ts_str = new_data.get("FeedTime", {}).get("UTCTime") or new_data.get("Meta", {}).get("Timestamp", {}).get("UTCTime")
-#         ts = datetime.strptime(ts_str, "%m/%d/%Y %I:%M:%S %p")
-#     except:
-#         ts = datetime.utcnow()
-
-#     # Format timestamp
-#     ts_filename = ts.strftime("%Y-%m-%dT%H-%M-%SZ")
-#     versioned_path = os.path.join(sub_cache_dir, f"{cache_key}_{ts_filename}.json")
-
-#     # Save both: latest pointer and timestamped snapshot
-#     with open(versioned_path, "w", encoding="utf-8") as f:
-#         json.dump(new_data, f, indent=2)
-#     with open(base_cache_path, "w", encoding="utf-8") as f:
-#         json.dump(new_data, f, indent=2)
-
-#     print(f"Updated cache for {url} → {versioned_path}")
-#     return new_data
-
-# def clear_cache():
-    # for file in os.listdir(CACHE_DIR):
-    #     os.remove(os.path.join(CACHE_DIR, file))
 
 # ================================
 
@@ -142,28 +84,33 @@ def build_player_team_url(uuid, userid, teamno=1, matchday=1):
     #     f"https://fantasy.formula1.com/services/user/opponentteam/opponentgamedayplayerteamget/1/{uuid}-0-{userid}/{teamno}/{matchday}/1")
     # return data
 
-def get_league_summary(players, headers, race_number, metric="Points", LL_DELTA=None):
-    assert metric in ["Points", "Budget"], "Invalid metric. Use 'Points' or 'Budget'."
-    
+def get_league_summary(players, race_number, metric="Points", LL_DELTA=None, *, first=0, last=0, top=0):   
+    if metric == "Points":
+        all_days = list(range(1, race_number))
+    elif metric == "Budget":
+        all_days = list(range(1, race_number + 1))
+    else:
+        print("Invalid metric. Use 'Points' or 'Budget'.")
+        return
+
     metric_key = "gdpoints" if metric == "Points" else "maxteambal"
     location_map = extract_race_locations()
-    RACE_DAYS = range(1, race_number + 1)
-    table = []
 
-    # Adjust header for LL delta
-    total_label = "Total Points"
-    if metric == "Points" and LL_DELTA is not None:
-        total_label += " (LL Adjusted)"
+    # Decide which races to show
+    if first > 0 and last > 0:
+        # Both flags: first N + last N
+        days = all_days[:first] + all_days[-last:]
+    elif first > 0:
+        days = all_days[:first]
+    elif last > 0:
+        days = all_days[-last:]
+    else:
+        days = all_days
 
-    table_headers = ["Team Name", "Chips"] + [location_map.get(r, f"Race {r}") for r in RACE_DAYS]
-    if metric == "Points":
-        table_headers.append(total_label)
-
+    rows, full_totals = [], []
     for player in players:
         for team in player["teams"]:
-            row = [team["name"]]
-            metric_total = 0
-            chips_value = "–"
+            chips = "–"
             used_LL = False
 
             # Fetch latest available team data for chip summary
@@ -173,58 +120,66 @@ def get_league_summary(players, headers, race_number, metric="Points", LL_DELTA=
             if latest_response.status_code == 200:
                 try:
                     latest_team_data = latest_response.json()['Data']['Value']['userTeam'][0]
-                    chips_value = parse_chips(latest_team_data, race_number, cumulative=True)
-                    used_LL = "LL" in chips_value
+                    chips = parse_chips(latest_team_data, race_number, cumulative=True)
+                    used_LL = "LL" in chips
                 except Exception:
-                    chips_value = "⚠️"
-            row.append(chips_value)
+                    # chips = "⚠️"
+                    pass
 
-            for r in RACE_DAYS:
-                url = build_player_team_url(player["uuid"], player["userid"], team["teamno"], matchday=r)
+            race_vals = []
+            for d in days:
+                url = build_player_team_url(player["uuid"], player["userid"], team["teamno"], matchday=d)
                 response = requests.get(url, headers=headers)
+                val = None
 
-                if response.status_code != 200:
-                    row.append("❌")
-                    continue
-
-                try:
-                    data = response.json()
-                    team_data = data['Data']['Value']['userTeam'][0]
-
-                    if metric == "Points":
-                        value = team_data.get(metric_key)
-                    elif metric == "Budget":
-                        value = (
-                            team_data.get(metric_key) or
-                            team_data.get("maxTeambal") or
-                            team_data.get("team_info", {}).get("maxTeambal")
+                if response.status_code == 200:
+                    try:
+                        val = response.json()['Data']['Value']['userTeam'][0]
+                        val = (
+                            int(val["gdpoints"])
+                            if metric == "Points"
+                            else (val.get(metric_key) or
+                                  val.get("maxTeambal") or
+                                  val.get("team_info", {}).get("maxTeambal"))
                         )
+                    except Exception:
+                        val = "⚠️⚠️"
+                        val = None
+                race_vals.append(val if val is not None else "–")
 
-                    if value is None:
-                        row.append("⚠️")
-                    else:
-                        row.append(value)
-                        if metric == "Points":
-                            metric_total += value
-                except Exception:
-                    row.append("⚠️⚠️")
+            # Points total across all races
+            total = 0
+            for d_all in all_days:
+                url = build_player_team_url(player["uuid"], player["userid"], team["teamno"], d_all)
+                r_all = requests.get(url, headers=headers)
+                if r_all.status_code == 200:
+                    try:
+                        total += int(r_all.json()['Data']['Value']['userTeam'][0]["gdpoints"])
+                    except:
+                        pass
 
-            if metric == "Points":
-                if LL_DELTA is not None and not used_LL:
-                    metric_total += LL_DELTA # Adjust for LL delta
-                row.append(metric_total)
-            table.append(row)
+            if metric == "Points" and LL_DELTA is not None and not used_LL:
+                total += LL_DELTA # Adjust for LL delta
 
-    table.sort(key=lambda x: x[-1] if isinstance(x[-1], (int, float)) else -1, reverse=True) # Sort by total points or budget
+            rows.append([team["name"], chips] + race_vals + ([total] if metric == "Points" else []))
+            full_totals.append(total)  
 
-    colalign = ["left", "left"] + ["right"] * (len(table_headers) - 2)
-    print(tabulate(table, headers=table_headers, tablefmt="grid", colalign=colalign))
+    rows = [r for _, r in sorted(zip(full_totals, rows), key=lambda x: x[0], reverse=True)] # Sort by total points or budget
 
-def get_team_compositions(players, headers, race_number):
-    table = []
+    if top > 0:
+        rows = rows[:top]
+
+    cols = ["Team Name", "Chips"] + [location_map.get(d, f"R{d}") for d in days]
+    if metric == "Points":
+        cols.append("Total Points" if LL_DELTA is None else "Total Points (LL Adj.)")
+
+    return print_rich_table(cols, rows)
+
+def get_team_compositions(players, race_number):
     player_id_map = build_player_id_map()
     table_headers = ["Team Name", "Chips", "Driver 1", "Driver 2", "Driver 3", "Driver 4", "Driver 5", "Constructor 1", "Constructor 2"]
 
+    rows = []
     for player in players:
         for team in player["teams"]:
             url = build_player_team_url(player["uuid"], player["userid"], team["teamno"], matchday=race_number)
@@ -232,48 +187,46 @@ def get_team_compositions(players, headers, race_number):
 
             if response.status_code != 200:
                 row = [team["name"]] + ["❌"] * 7
-                table.append(row)
-                continue
+            else:
+                try:
+                    data = response.json()
+                    team_data = data["Data"]["Value"]["userTeam"][0]
 
-            try:
-                data = response.json()
-                team_data = data["Data"]["Value"]["userTeam"][0]
+                    chip_info = parse_chips(team_data, race_number)
+                    player_ids = team_data["playerid"]
 
-                chip_info = parse_chips(team_data, race_number)
-                player_ids = team_data["playerid"]
+                    drivers = []
+                    constructors = []
 
-                drivers = []
-                constructors = []
+                    for entry in sorted(player_ids, key=lambda x: x["playerpostion"]):
+                        player_id = int(entry["id"])
+                        name = player_id_map.get(player_id, f"Unknown ({player_id})")
+                        if entry.get("iscaptain", 0):
+                            name += " (2x)"
+                        if entry.get("ismgcaptain", 0):
+                            name += " (3x)"
+                        pos = entry["playerpostion"]
 
-                for entry in sorted(player_ids, key=lambda x: x["playerpostion"]):
-                    player_id = int(entry["id"])
-                    name = player_id_map.get(player_id, f"Unknown ({player_id})")
-                    if entry.get("iscaptain", 0):
-                        name += " (2x)"
-                    if entry.get("ismgcaptain", 0):
-                        name += " (3x)"
-                    pos = entry["playerpostion"]
+                        if pos in range(1, 6):
+                            drivers.append(name)
+                        else:
+                            constructors.append(name)
 
-                    if pos in range(1, 6):
-                        drivers.append(name)
-                    else:
-                        constructors.append(name)
+                    # Pad if incomplete data
+                    while len(drivers) < 5:
+                        drivers.append("⚠️")
+                    while len(constructors) < 2:
+                        constructors.append("⚠️")
 
-                # Pad if incomplete data
-                while len(drivers) < 5:
-                    drivers.append("⚠️")
-                while len(constructors) < 2:
-                    constructors.append("⚠️")
+                    row = [team["name"], chip_info] + drivers[:5] + constructors[:2]
 
-                row = [team["name"], chip_info] + drivers[:5] + constructors[:2]
-                table.append(row)
+                except Exception as e:
+                    print(f"Error parsing team for {team['name']}: {e}")
+                    row = [team["name"]] + ["⚠️"] * 7
+            rows.append(row)
 
-            except Exception as e:
-                print(f"Error parsing team for {team['name']}: {e}")
-                row = [team["name"]] + ["⚠️"] * 7
-                table.append(row)
-
-    print(tabulate(table, headers=table_headers, tablefmt="grid"))
+    race_location = extract_race_locations().get(race_number, f"Race {race_number}")
+    return print_rich_table(table_headers, rows, title=f"Team Compositions for {race_location}")
 
 def parse_chips(team_data, race_number, cumulative=False):
     chips = []
@@ -299,7 +252,7 @@ def parse_chips(team_data, race_number, cumulative=False):
 
     return ", ".join([abbr for _, abbr in chips]) if chips else "–"
 
-def season_summary(players, headers, race_number, include_all_teams=False):
+def season_summary(players, race_number, include_all_teams=False):
     location_map = extract_race_locations()
     race_days = range(1, race_number + 1)
     team_points = {}
@@ -356,7 +309,7 @@ def season_summary(players, headers, race_number, include_all_teams=False):
     plt.tight_layout()
     plt.show()
 
-def cumulative_gap_from_leader(players, headers, race_number, include_all_teams=False):
+def cumulative_gap_from_leader(players, race_number, include_all_teams=False):
     location_map = extract_race_locations()
     RACE_DAYS = range(1, race_number + 1)
     team_totals = {}
@@ -420,6 +373,15 @@ def cumulative_gap_from_leader(players, headers, race_number, include_all_teams=
     plt.grid(True, linestyle="--", alpha=0.7)
     plt.tight_layout()
     plt.show()
+
+def print_rich_table(headers, rows, title=None, highlight=True, show_lines=True):
+    table = Table(title=title, highlight=highlight, show_lines=show_lines)
+    for idx, col in enumerate(headers):
+        justify = "left" if idx < 2 else "right"
+        table.add_column(col, justify=justify)
+    for row in rows:
+        table.add_row(*map(str, row))
+    console.print(table)
 
 # ================================
 
@@ -500,35 +462,24 @@ def get_constructor_stats():
 
     return constructors, entity_map
 
-def print_asset_table(assets):
+def print_asset_table(assets, title):
     if not assets:
         print("No data to display.")
         return
 
-    # Get headers
-    headers = list(assets[0].keys())
-    widths = [max(len(str(row[h])) for row in assets) for h in headers]
-    widths = [max(w, len(h)) for w, h in zip(widths, headers)]
-
-    # Print header
-    print(" | ".join(h.ljust(w) for h, w in zip(headers, widths)))
-    print("-+-".join("-" * w for w in widths))
-
-    # Print rows
-    for row in assets:
-        print(" | ".join(str(row[h]).ljust(w) for h, w in zip(headers, widths)))
+    table_headers = list(assets[0].keys())
+    rows = [[row[h] for h in table_headers] for row in assets]
+    return print_rich_table(table_headers, rows, title=title)
 
 def print_driver_table():
-    print("\n============ DRIVER STATS ============")
     drivers, _ = get_driver_stats()
     drivers = sorted(drivers, key=lambda x: x.get("Value (M)", 0), reverse=True)
-    print_asset_table(drivers)
+    print_asset_table(drivers, title="Driver Stats")
 
 def print_constructor_table():
-    print("\n============ CONSTRUCTOR STATS ============")
     constructors, _ = get_constructor_stats()
     constructors = sorted(constructors, key=lambda x: x.get("Value (M)", 0), reverse=True)
-    print_asset_table(constructors)
+    print_asset_table(constructors, title="Constructor Stats")
 
 def build_player_id_map():
     _, driver_map = get_driver_stats()
@@ -594,21 +545,24 @@ if __name__ == "__main__":
     # ================================
     # 📊 Basic League Summaries
     # ================================
-    # get_league_summary(players, headers, RACE_NUMBER)
-    # get_league_summary(players, headers, RACE_NUMBER, "Budget")
-
+    # get_league_summary(players, RACE_NUMBER)
+    # get_league_summary(players, RACE_NUMBER, "Budget")
+    
+    get_league_summary(players, RACE_NUMBER, last=5)
+    get_league_summary(players, RACE_NUMBER, "Budget", last=5)
+    
     # ================================
     # 🔍 Advanced Summaries
     # ================================
-    # get_league_summary(players, headers, RACE_NUMBER, LL_DELTA=LL_DELTA)   # LL-adjusted points
-    # season_summary(players, headers, RACE_NUMBER, include_all_teams=True)  # Season progression
-    # cumulative_gap_from_leader(players, headers, RACE_NUMBER)              # Points gap vs leader
+    # get_league_summary(players, RACE_NUMBER, LL_DELTA=LL_DELTA)   # LL-adjusted points
+    # season_summary(players, RACE_NUMBER, include_all_teams=True)  # Season progression
+    # cumulative_gap_from_leader(players, RACE_NUMBER)              # Points gap vs leader
 
     # ================================
     # 🧑‍🤝‍🧑 Team Lineups
     # ================================
-    # get_team_compositions(players, headers, RACE_NUMBER - 1)  # Previous race
-    # get_team_compositions(players, headers, RACE_NUMBER)      # Current race
+    # get_team_compositions(players, RACE_NUMBER - 1)  # Previous race
+    # get_team_compositions(players, RACE_NUMBER)      # Current race
     
     # ================================
     # 📈 Driver/Constructor Asset Stats
