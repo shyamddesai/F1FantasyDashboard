@@ -303,6 +303,7 @@ def season_summary(players, race_number, include_all_teams=False):
     plt.xlabel("Circuit")
     plt.ylabel("Cumulative Points")
     plt.title("Cumulative Points per Race")
+    plt.gcf().canvas.manager.set_window_title("Cumulative Fantasy Points")
     plt.grid(True, linestyle='--', alpha=0.6)
     plt.xticks(race_days, [location_map.get(r, f"Race {r}") for r in race_days], rotation=45, ha='right')
     plt.legend(title="Teams", loc="upper left")
@@ -366,6 +367,7 @@ def cumulative_gap_from_leader(players, race_number, include_all_teams=False):
 
     plt.axhline(0, color="gray", linestyle="--", linewidth=1)
     plt.title("Cumulative Point Gap from Race Leader")
+    plt.gcf().canvas.manager.set_window_title("Points Gap from Leader")
     plt.xlabel("Circuit")
     plt.ylabel("Points Behind Leader")
     plt.xticks(races, [location_map.get(r, f"Race {r}") for r in races], rotation=45, ha='right')
@@ -374,15 +376,132 @@ def cumulative_gap_from_leader(players, race_number, include_all_teams=False):
     plt.tight_layout()
     plt.show()
 
-def print_rich_table(headers, rows, title=None, highlight=True, show_lines=True):
-    table = Table(title=title, highlight=highlight, show_lines=show_lines)
-    for idx, col in enumerate(headers):
-        justify = "left" if idx < 2 else "right"
-        table.add_column(col, justify=justify)
-    for row in rows:
-        table.add_row(*map(str, row))
-    console.print(table)
+def cumulative_gap_from_leader_budget(players, race_number, include_all_teams=False):
+    location_map = extract_race_locations()
+    RACE_DAYS = range(1, race_number + 1)
+    team_budgets = {}
 
+    for player in players:
+        for team in player["teams"]:
+            if not include_all_teams and team["teamno"] != 1:
+                continue
+
+            team_name = team["name"]
+            budgets = []
+            for r in RACE_DAYS:
+                url = build_player_team_url(player["uuid"], player["userid"], team["teamno"], matchday=r)
+                response = requests.get(url, headers=headers)
+                if response.status_code != 200:
+                    budgets.append(0 if not budgets else budgets[-1])
+                    continue
+                try:
+                    data = response.json()
+                    val = (
+                        data["Data"]["Value"]["userTeam"][0].get("maxteambal") or
+                        data["Data"]["Value"]["userTeam"][0].get("team_info", {}).get("maxTeambal") or
+                        0
+                    )
+                    budgets.append(float(val))
+                except Exception:
+                    budgets.append(0 if not budgets else budgets[-1])
+            team_budgets[team_name] = budgets
+
+    # Compute budget gap to leader for each race
+    all_teams = list(team_budgets.keys())
+    budget_leader = [max([team_budgets[team][i] for team in all_teams]) for i in range(race_number)]
+
+    plt.figure(figsize=(15, 9))
+    races = list(RACE_DAYS)
+    for team, budgets in team_budgets.items():
+        gaps = [round(budgets[i] - budget_leader[i], 2) for i in range(race_number)]
+        line, = plt.plot(races, gaps, marker='o', linewidth=2, label=team)
+        for i, gap in enumerate(gaps):
+            if gap != 0:
+                y_offset = -10 if i % 2 == 0 else 10
+                plt.annotate(
+                    f"{gap}",
+                    (races[i], gap),
+                    color=line.get_color(),
+                    fontsize=8,
+                    textcoords="offset points",
+                    xytext=(0, y_offset),
+                    clip_on=False,
+                    ha='center',
+                    bbox=dict(boxstyle="round,pad=0.2", fc="white", ec="none", alpha=0.7)
+                )
+    plt.axhline(0, color="gray", linestyle="--", linewidth=1)
+    plt.title("Budget Gap from Leader per Race")
+    plt.gcf().canvas.manager.set_window_title("Budget Gap from Leader")
+    plt.xlabel("Circuit")
+    plt.ylabel("Budget Behind Leader (Million)")
+    plt.xticks(races, [location_map.get(r, f"Race {r}") for r in races], rotation=45, ha='right')
+    plt.legend(title="Teams")
+    plt.grid(True, linestyle="--", alpha=0.7)
+    plt.tight_layout()
+    plt.show()
+
+def budget_performance_by_race(players, race_number):
+    location_map = extract_race_locations()
+    RACE_DAYS = list(range(1, race_number + 1))
+    team_deltas = {}
+
+    for player in players:
+        for team in player["teams"]:
+            team_name = team["name"]
+            vals = []
+
+            for r in RACE_DAYS:
+                url = build_player_team_url(player["uuid"], player["userid"], team["teamno"], matchday=r)
+                response = requests.get(url, headers=headers)
+
+                if response.status_code != 200:
+                    vals.append(0 if not vals else vals[-1])
+                    continue
+
+                try:
+                    data = response.json()
+                    val = float(
+                        data["Data"]["Value"]["userTeam"][0].get("maxteambal")
+                        or data["Data"]["Value"]["userTeam"][0].get("team_info", {}).get("maxTeambal")
+                        or 0
+                    )
+                    vals.append(val)
+
+                except Exception:
+                    vals.append(0 if not vals else vals[-1])
+            vals = [v - 100 for v in vals]  # Normalize from 100 (starting budget)
+            deltas = [vals[0]] + [vals[i] - vals[i-1] for i in range(1, len(vals))]
+            team_deltas[team_name] = (deltas, team["teamno"])
+
+    plt.figure(figsize=(24, 8))
+    races = list(RACE_DAYS)
+    for team, (deltas, _) in team_deltas.items():
+        x = list(range(1, len(deltas) + 1))
+        plt.plot(x, deltas, marker='o', linewidth=2, label=team)
+        for i, delta in enumerate(deltas):
+            if abs(delta) > 0:
+                y_offset = -10 if i % 2 == 0 else 10
+                plt.annotate(
+                    f"{delta:+.1f}",
+                    (x[i], deltas[i]),
+                    fontsize=8,
+                    color="black",
+                    textcoords="offset points",
+                    xytext=(0, y_offset),
+                    ha='center',
+                    bbox=dict(boxstyle="round,pad=0.2", fc="white", ec="none", alpha=0.7)
+                )
+
+    plt.title(f"Race-by-Race Budget Performance Delta per Team")
+    plt.xlabel("Circuit")
+    plt.ylabel(f"Change in Budget")
+    plt.xticks(races, [location_map.get(r, f"Race {r}") for r in races], rotation=45, ha='right')
+    plt.legend(title="Teams")
+    plt.grid(True, linestyle="--", alpha=0.6)
+    plt.tight_layout()
+    plt.gcf().canvas.manager.set_window_title(f"Budget Performance Over Season")
+    plt.show()
+    
 # ================================
 
 def fetch_f1_data(RACE_NUMBER):
@@ -510,6 +629,15 @@ def extract_race_locations():
 
     return circuit_dict
 
+def print_rich_table(headers, rows, title=None, highlight=True, show_lines=True):
+    table = Table(title=title, highlight=highlight, show_lines=show_lines)
+    for idx, col in enumerate(headers):
+        justify = "left" if idx < 2 else "right"
+        table.add_column(col, justify=justify)
+    for row in rows:
+        table.add_row(*map(str, row))
+    console.print(table)
+
 # ================================
 
 if __name__ == "__main__":
@@ -556,7 +684,9 @@ if __name__ == "__main__":
     # ================================
     # get_league_summary(players, RACE_NUMBER, LL_DELTA=LL_DELTA)   # LL-adjusted points
     # season_summary(players, RACE_NUMBER, include_all_teams=True)  # Season progression
-    # cumulative_gap_from_leader(players, RACE_NUMBER)              # Points gap vs leader
+    cumulative_gap_from_leader(players, RACE_NUMBER)              # Points gap vs leader
+    # cumulative_gap_from_leader_budget(players, RACE_NUMBER)       # Budget gap vs leader
+    budget_performance_by_race(players, RACE_NUMBER)              # Budget performance by race
 
     # ================================
     # 🧑‍🤝‍🧑 Team Lineups
