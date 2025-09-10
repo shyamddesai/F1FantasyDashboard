@@ -176,7 +176,7 @@ def get_league_summary(players, race_number, metric="Points", LL_DELTA=None, *, 
     return print_rich_table(cols, rows)
 
 def get_team_compositions(players, race_number):
-    player_id_map = build_player_id_map()
+    player_id_map = build_player_id_map(race_number)
     table_headers = ["Team Name", "Chips", "Driver 1", "Driver 2", "Driver 3", "Driver 4", "Driver 5", "Constructor 1", "Constructor 2"]
 
     rows = []
@@ -252,7 +252,7 @@ def parse_chips(team_data, race_number, cumulative=False):
 
     return ", ".join([abbr for _, abbr in chips]) if chips else "–"
 
-def season_summary(players, race_number, include_all_teams=False):
+def season_summary(players, race_number, include_all_teams=False, show_plot=True):
     location_map = extract_race_locations()
     race_days = range(1, race_number + 1)
     team_points = {}
@@ -283,7 +283,7 @@ def season_summary(players, race_number, include_all_teams=False):
                 except:
                     team_points[team_name].append(cumulative)
 
-    plt.figure(figsize=(24, 8))
+    fig = plt.figure(figsize=(24, 8))
     for team_name, points in team_points.items():
         line, = plt.plot(race_days, points, marker='o', linewidth=2, label=team_name)
         for i, score in enumerate(points):
@@ -308,9 +308,11 @@ def season_summary(players, race_number, include_all_teams=False):
     plt.xticks(race_days, [location_map.get(r, f"Race {r}") for r in race_days], rotation=45, ha='right')
     plt.legend(title="Teams", loc="upper left")
     plt.tight_layout()
-    plt.show()
+    plt.show() if show_plot else plt.close()
 
-def cumulative_gap_from_leader(players, race_number, include_all_teams=False):
+    return fig
+
+def cumulative_gap_from_leader(players, race_number, include_all_teams=False, show_plot=True):
     location_map = extract_race_locations()
     RACE_DAYS = range(1, race_number + 1)
     team_totals = {}
@@ -345,7 +347,7 @@ def cumulative_gap_from_leader(players, race_number, include_all_teams=False):
     all_teams = list(team_totals.keys())
     leader_per_race = [max(team_totals[team][i] for team in all_teams) for i in range(race_number)]
 
-    plt.figure(figsize=(15, 9))
+    fig = plt.figure(figsize=(15, 9))
     for team, points in team_totals.items():
         gaps = [int(points[i] - leader_per_race[i]) for i in range(race_number)]
         line, = plt.plot(races, gaps, marker='o', linewidth=2, label=team)
@@ -374,9 +376,11 @@ def cumulative_gap_from_leader(players, race_number, include_all_teams=False):
     plt.legend(title="Teams")
     plt.grid(True, linestyle="--", alpha=0.7)
     plt.tight_layout()
-    plt.show()
+    plt.show() if show_plot else plt.close()
 
-def cumulative_gap_from_leader_budget(players, race_number, include_all_teams=False):
+    return fig
+
+def cumulative_gap_from_leader_budget(players, race_number, include_all_teams=False, show_plot=True):
     location_map = extract_race_locations()
     RACE_DAYS = range(1, race_number + 1)
     team_budgets = {}
@@ -410,7 +414,7 @@ def cumulative_gap_from_leader_budget(players, race_number, include_all_teams=Fa
     all_teams = list(team_budgets.keys())
     budget_leader = [max([team_budgets[team][i] for team in all_teams]) for i in range(race_number)]
 
-    plt.figure(figsize=(15, 9))
+    fig = plt.figure(figsize=(15, 9))
     races = list(RACE_DAYS)
     for team, budgets in team_budgets.items():
         gaps = [round(budgets[i] - budget_leader[i], 2) for i in range(race_number)]
@@ -438,9 +442,11 @@ def cumulative_gap_from_leader_budget(players, race_number, include_all_teams=Fa
     plt.legend(title="Teams")
     plt.grid(True, linestyle="--", alpha=0.7)
     plt.tight_layout()
-    plt.show()
+    plt.show() if show_plot else plt.close()
 
-def budget_performance_by_race(players, race_number):
+    return fig
+
+def budget_performance_by_race(players, race_number, show_plot=True):
     location_map = extract_race_locations()
     RACE_DAYS = list(range(1, race_number + 1))
     team_deltas = {}
@@ -473,7 +479,7 @@ def budget_performance_by_race(players, race_number):
             deltas = [vals[0]] + [vals[i] - vals[i-1] for i in range(1, len(vals))]
             team_deltas[team_name] = (deltas, team["teamno"])
 
-    plt.figure(figsize=(24, 8))
+    fig = plt.figure(figsize=(24, 8))
     races = list(RACE_DAYS)
     for team, (deltas, _) in team_deltas.items():
         x = list(range(1, len(deltas) + 1))
@@ -500,12 +506,14 @@ def budget_performance_by_race(players, race_number):
     plt.grid(True, linestyle="--", alpha=0.6)
     plt.tight_layout()
     plt.gcf().canvas.manager.set_window_title(f"Budget Performance Over Season")
-    plt.show()
+    plt.show() if show_plot else plt.close()
+
+    return fig
     
 # ================================
 
-def fetch_f1_data(RACE_NUMBER):
-    FANTASY_API_URL = f"https://fantasy.formula1.com/feeds/drivers/{RACE_NUMBER}_en.json"
+def fetch_f1_data(race_number):
+    FANTASY_API_URL = f"https://fantasy.formula1.com/feeds/drivers/{race_number}_en.json"
 
     response = requests.get(FANTASY_API_URL)
     if response.status_code == 200:
@@ -515,8 +523,8 @@ def fetch_f1_data(RACE_NUMBER):
 
     # return fetch_with_cache(FANTASY_API_URL, headers=headers)['Data']['Value']
 
-def get_driver_stats():
-    data = fetch_f1_data(RACE_NUMBER)
+def get_driver_stats(race_number):
+    data = fetch_f1_data(race_number)
     drivers = []
     entity_map = {}
 
@@ -556,8 +564,8 @@ def get_current_race_number():
         print(f"⚠️ Could not fetch current race number: {e}")
         return None
 
-def get_constructor_stats():
-    data = fetch_f1_data(RACE_NUMBER)
+def get_constructor_stats(race_number):
+    data = fetch_f1_data(race_number)
     constructors = []
     entity_map = {}
 
@@ -594,15 +602,17 @@ def print_driver_table():
     drivers, _ = get_driver_stats()
     drivers = sorted(drivers, key=lambda x: x.get("Value (M)", 0), reverse=True)
     print_asset_table(drivers, title="Driver Stats")
+    return drivers
 
 def print_constructor_table():
     constructors, _ = get_constructor_stats()
     constructors = sorted(constructors, key=lambda x: x.get("Value (M)", 0), reverse=True)
     print_asset_table(constructors, title="Constructor Stats")
+    return constructors
 
-def build_player_id_map():
-    _, driver_map = get_driver_stats()
-    _, constructor_map = get_constructor_stats()
+def build_player_id_map(race_number):
+    _, driver_map = get_driver_stats(race_number)
+    _, constructor_map = get_constructor_stats(race_number)
     return {**driver_map, **constructor_map}
 
 def extract_race_locations():
@@ -637,6 +647,8 @@ def print_rich_table(headers, rows, title=None, highlight=True, show_lines=True)
     for row in rows:
         table.add_row(*map(str, row))
     console.print(table)
+
+    return table
 
 # ================================
 
@@ -692,7 +704,7 @@ if __name__ == "__main__":
     # 🧑‍🤝‍🧑 Team Lineups
     # ================================
     # get_team_compositions(players, RACE_NUMBER - 1)  # Previous race
-    # get_team_compositions(players, RACE_NUMBER)      # Current race
+    get_team_compositions(players, RACE_NUMBER)      # Current race
     
     # ================================
     # 📈 Driver/Constructor Asset Stats
