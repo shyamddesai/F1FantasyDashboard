@@ -168,7 +168,7 @@ def build_player_team_url(uuid, userid, teamno=1, matchday=1):
 
 def get_league_summary(players, race_number, metric="Points", LL_DELTA=None, *, first=0, last=0, top=0):   
     if metric == "Points":
-        all_days = list(range(1, race_number))
+        all_days = list(range(1, race_number + 1))
     elif metric == "Budget":
         all_days = list(range(1, race_number + 1))
     else:
@@ -247,15 +247,22 @@ def get_league_summary(players, race_number, metric="Points", LL_DELTA=None, *, 
             full_totals.append(total)  
 
     rows = [r for _, r in sorted(zip(full_totals, rows), key=lambda x: x[0], reverse=True)] # Sort by total points or budget
-
-    if top > 0:
-        rows = rows[:top]
-
     cols = ["Team Name", "Chips"] + [location_map.get(d, f"R{d}") for d in days]
     if metric == "Points":
         cols.append("Total Points" if LL_DELTA is None else "Total Points (LL Adj.)")
 
-    return print_rich_table(cols, rows)
+    # Detect columns with non-empty data
+    data_cols = list(range(2, len(rows[0]) - 1))
+    kept_idx = [i for i in data_cols if any(row[i] not in {"–", "-", 0, "0", ""} for row in rows)]
+
+    # Build filtered rows and headers based on kept columns + first two + last total column
+    new_rows = [[row[i] for i in [0, 1] + kept_idx] + [row[-1]] for row in rows]
+    new_headers = [cols[i] for i in [0, 1] + kept_idx] + [cols[-1]]
+
+    if top > 0:
+        rows = rows[:top]
+
+    return print_rich_table(new_headers, new_rows)
 
 def get_team_compositions(players, race_number):
     player_id_map = build_player_id_map(race_number)
@@ -771,15 +778,15 @@ if __name__ == "__main__":
     # ================================
     # get_league_summary(players, RACE_NUMBER, LL_DELTA=LL_DELTA)   # LL-adjusted points
     # season_summary(players, RACE_NUMBER, include_all_teams=True)  # Season progression
-    cumulative_gap_from_leader(players, RACE_NUMBER)              # Points gap vs leader
+    # cumulative_gap_from_leader(players, RACE_NUMBER)              # Points gap vs leader
     # cumulative_gap_from_leader_budget(players, RACE_NUMBER)       # Budget gap vs leader
-    budget_performance_by_race(players, RACE_NUMBER)              # Budget performance by race
+    # budget_performance_by_race(players, RACE_NUMBER)              # Budget performance by race
 
     # ================================
     # 🧑‍🤝‍🧑 Team Lineups
     # ================================
     # get_team_compositions(players, RACE_NUMBER - 1)  # Previous race
-    get_team_compositions(players, RACE_NUMBER)      # Current race
+    # get_team_compositions(players, RACE_NUMBER)      # Current race
     
     # ================================
     # 📈 Driver/Constructor Asset Stats
