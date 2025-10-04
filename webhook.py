@@ -1,5 +1,6 @@
 from flask import Flask, request
 import json, pathlib
+
 app = Flask(__name__)
 COOKIE_FILE = "/data/cookie.json"
 
