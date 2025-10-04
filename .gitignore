@@ -2,3 +2,4 @@ cookie.json
 players.json
 .env
 cache/
+__pycache__/

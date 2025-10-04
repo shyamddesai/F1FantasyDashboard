@@ -1,6 +1,11 @@
 import os
 import sys
 import json
+import sqlite3
+import shutil
+import tempfile
+import configparser
+from pathlib import Path
 import requests
 import matplotlib.pyplot as plt
 from rich.console import Console
@@ -11,20 +16,11 @@ from dotenv import load_dotenv
 load_dotenv()
 console = Console()
 
-with open("cookie.json", "r", encoding="utf-8") as f:
-    cookie_dict = json.load(f)
-    cookie_dict = cookie_dict["Request Cookies"]
-
-# Convert dict to properly formatted string for the cookie header
-cookie_header = "; ".join([f"{key}={value}" for key, value in cookie_dict.items()])
-
-headers = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
-    "Accept": "application/json",
-    "Referer": "https://fantasy.formula1.com",
-    "Origin": "https://fantasy.formula1.com",
-    "Cookie": cookie_header
-}
+try:
+    with open("cookie.json", "r", encoding="utf-8") as f:
+        cookie_dict = json.load(f).get("Request Cookies", {})
+except (FileNotFoundError, json.JSONDecodeError):
+    cookie_dict = {}    
 
 try:
     with open("./players.json", "r", encoding="utf-8") as f:
@@ -32,12 +28,98 @@ try:
 except (json.decoder.JSONDecodeError, FileNotFoundError):
     players = {}
 
+headers = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+    "Accept": "application/json",
+    "Referer": "https://fantasy.formula1.com",
+    "Origin": "https://fantasy.formula1.com",
+    "Cookie": "; ".join(f"{k}={v}" for k, v in cookie_dict.items()),
+}
+
+def harvest_f1_cookies(force=False):
+    if not force and validate_cookie_session():
+        return
+    
+    console.print("[yellow]🍪  Refreshing cookies from Firefox …[/yellow]")
+    profile = os.getenv("FIREFOX_PROFILE", "").strip()
+
+    if profile:
+        profile_path = Path(os.path.expandvars(r"%APPDATA%\Mozilla\Firefox\Profiles")) / profile
+        if not profile_path.is_dir():
+            raise FileNotFoundError(f"Profile folder does not exist: {profile_path}")
+    else:
+        ini = Path(os.path.expandvars(r"%APPDATA%\Mozilla\Firefox\profiles.ini"))
+        if not ini.exists():
+            raise FileNotFoundError("Firefox profiles.ini not found – cannot auto-detect profile")
+        cfg = configparser.ConfigParser()
+        cfg.read(ini)
+        for sect in cfg.sections():
+            if cfg.getboolean(sect, "Default", fallback=False):
+                path = cfg.get(sect, "Path")
+                profile_path = ini.parent / path if os.sep not in path else Path(path)
+                break
+        else:
+            raise RuntimeError("No default profile found in profiles.ini")
+
+    cookie_db = profile_path / "cookies.sqlite"
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".sqlite") as tmp:
+        shutil.copy2(cookie_db, tmp.name)
+
+    conn = sqlite3.connect(tmp.name)
+    rows = conn.execute(
+        "SELECT name,value,host,path,expiry,isSecure,isHttpOnly "
+        "FROM moz_cookies WHERE host LIKE '%formula1%'"
+    ).fetchall()
+    conn.close()
+    os.remove(tmp.name)
+
+    WANTED = {"consentUUID", "consentDate", "F1_FANTASY_007", "login-session", "reese84"}
+    inner  = {r[0]: r[1] for r in rows if r[0] in WANTED}
+
+    with open("cookie.json", "w", encoding="utf-8") as f:
+        json.dump({"Request Cookies": inner}, f, indent=2)
+
+    if not validate_cookie_session():
+        console.print("[red]❌  No valid cookies – please log into https://fantasy.formula1.com "
+                      "in Firefox, then re-run.[/red]")
+        sys.exit(1)
+
+    return inner
+
+def validate_cookie_session() -> bool:
+    try:
+        jar = json.load(open("cookie.json", encoding="utf-8"))["Request Cookies"]
+    except Exception:
+        return False
+    
+    try:
+        with open("players.json", encoding="utf-8") as f:
+            me = json.load(f)[0]
+            uuid   = me["uuid"]
+    except (FileNotFoundError, IndexError, KeyError):
+        return False
+    url = f"https://fantasy.formula1.com/services/user/gameplay/{uuid}/getteam/1/1/1/1"
+    
+    r = requests.get(
+        url,
+        headers={
+            "User-Agent": headers["User-Agent"],
+            "Accept": "application/json",
+            "Cookie": "; ".join(f"{k}={v}" for k, v in jar.items())
+        },
+        timeout=8
+    )
+    return r.status_code == 200 and r.json().get("Data", {}).get("Value", {}).get("mdid") is not None
+
 # ================================
 
-def fetch_league_players(player_uuid, league_id, save_path="players.json"):
+def fetch_league_players(save_path="players.json"):
     if os.path.exists(save_path) and os.path.getsize(save_path) > 0:
         with open(save_path, "r", encoding="utf-8") as f:
             return json.load(f)
+
+    player_uuid = os.getenv("PLAYER_UUID")
+    league_id = os.getenv("PLAYER_LEAGUE")
         
     if not player_uuid or not league_id:
         print(f"Invalid input: {player_uuid}, {league_id}")
@@ -653,6 +735,9 @@ def print_rich_table(headers, rows, title=None, highlight=True, show_lines=True)
 # ================================
 
 if __name__ == "__main__":
+    harvest_f1_cookies()
+    players = fetch_league_players()
+
     if len(sys.argv) > 1:
         try:
             RACE_NUMBER = int(sys.argv[1]) # Override race number from console argument
@@ -671,16 +756,6 @@ if __name__ == "__main__":
 
     # Add a fixed points delta as if every manager had used LL
     LL_DELTA = 128
-
-    # ================================
-    # 🏎️ Fetch League Players
-    # ================================
-    # Automatically pulls all participants and their team entries
-    # Requires your player UUID + league ID from F1 Fantasy website
-    players = fetch_league_players(
-        player_uuid=os.getenv("PLAYER_UUID"),
-        league_id=os.getenv("PLAYER_LEAGUE")
-    )
 
     # ================================
     # 📊 Basic League Summaries
