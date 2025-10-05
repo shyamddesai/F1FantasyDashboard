@@ -2,7 +2,7 @@ from flask import Flask, request
 import json, pathlib
 
 app = Flask(__name__)
-COOKIE_FILE = "/data/cookie.json"
+COOKIE_FILE = "cookie.json"
 
 @app.post("/cookies")
 def drop():
