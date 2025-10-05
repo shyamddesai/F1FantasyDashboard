@@ -24,7 +24,7 @@ prefixes = [PREFIX] + [f"<@1415422643091275798> ", f"<@!1415422643091275798> "]
 bot = commands.Bot(command_prefix=prefixes, intents=intents)
 
 async def fetch_players():
-    cache = pathlib.Path("players.json")
+    cache = pathlib.Path(os.getenv("PLAYER_PATH", "players.json"))
     if cache.is_file() and cache.stat().st_size > 0:
         return json.loads(cache.read_text(encoding="utf-8"))
 

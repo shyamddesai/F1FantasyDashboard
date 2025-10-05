@@ -16,14 +16,17 @@ from dotenv import load_dotenv
 load_dotenv()
 console = Console()
 
+COOKIE_FILE = os.getenv("COOKIE_FILE", "cookie.json")
+PLAYERS_FILE = os.getenv("PLAYER_FILE", "players.json")
+
 try:
-    with open("cookie.json", "r", encoding="utf-8") as f:
+    with open(COOKIE_FILE, "r", encoding="utf-8") as f:
         cookie_dict = json.load(f).get("Request Cookies", {})
 except (FileNotFoundError, json.JSONDecodeError):
     cookie_dict = {}    
 
 try:
-    with open("./players.json", "r", encoding="utf-8") as f:
+    with open(PLAYERS_FILE, "r", encoding="utf-8") as f:
         players = json.load(f)
 except (json.decoder.JSONDecodeError, FileNotFoundError):
     players = {}
@@ -76,7 +79,7 @@ def harvest_f1_cookies(force=False):
     WANTED = {"consentUUID", "consentDate", "F1_FANTASY_007", "login-session", "reese84"}
     inner  = {r[0]: r[1] for r in rows if r[0] in WANTED}
 
-    with open("cookie.json", "w", encoding="utf-8") as f:
+    with open(COOKIE_FILE, "w", encoding="utf-8") as f:
         json.dump({"Request Cookies": inner}, f, indent=2)
 
     if not validate_cookie_session():
@@ -88,12 +91,12 @@ def harvest_f1_cookies(force=False):
 
 def validate_cookie_session() -> bool:
     try:
-        jar = json.load(open("cookie.json", encoding="utf-8"))["Request Cookies"]
+        jar = json.load(open(COOKIE_FILE, encoding="utf-8"))["Request Cookies"]
     except Exception:
         return False
     
     try:
-        with open("players.json", encoding="utf-8") as f:
+        with open(PLAYERS_FILE, encoding="utf-8") as f:
             me = json.load(f)[0]
             uuid   = me["uuid"]
     except (FileNotFoundError, IndexError, KeyError):
@@ -113,7 +116,7 @@ def validate_cookie_session() -> bool:
 
 # ================================
 
-def fetch_league_players(save_path="players.json"):
+def fetch_league_players(save_path=PLAYERS_FILE):
     if os.path.exists(save_path) and os.path.getsize(save_path) > 0:
         with open(save_path, "r", encoding="utf-8") as f:
             return json.load(f)

@@ -1,9 +1,9 @@
 from flask import Flask, request, jsonify
-import json
+import json, os
 
 app = Flask(__name__)
-COOKIE_FILE = "cookie.json"
-PLAYERS_FILE = "players.json"
+COOKIE_FILE = os.getenv("COOKIE_PATH", "cookie.json")
+PLAYERS_FILE = os.getenv("PLAYER_PATH", "players.json")
 
 @app.route("/cookies", methods=["POST"])
 def cookies():
