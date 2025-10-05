@@ -2,9 +2,12 @@ import os
 import io
 import re
 import sys
+import json
+import pathlib
 import discord
 import matplotlib.pyplot as plt
 import f1_fantasy_dashboard as f1fd
+from requests.exceptions import JSONDecodeError
 from PIL import Image, ImageDraw, ImageFont
 from discord.ext import commands
 from dotenv import load_dotenv
@@ -21,7 +24,17 @@ prefixes = [PREFIX] + [f"<@1415422643091275798> ", f"<@!1415422643091275798> "]
 bot = commands.Bot(command_prefix=prefixes, intents=intents)
 
 async def fetch_players():
-    return f1fd.fetch_league_players()
+    cache = pathlib.Path("players.json")
+    if cache.is_file() and cache.stat().st_size > 0:
+        return json.loads(cache.read_text(encoding="utf-8"))
+
+    try:
+        players = f1fd.fetch_league_players()
+    except JSONDecodeError:
+        print("[red]🍪  Session expired – re-harvesting cookies…[/red]")
+        f1fd.harvest_f1_cookies(force=True)
+        players = f1fd.fetch_league_players()
+    return players
 
 def strip_ansi_codes(text):
     ansi_escape = re.compile(r'\x1B[@-_][0-?]*[ -/]*[@-~]')
