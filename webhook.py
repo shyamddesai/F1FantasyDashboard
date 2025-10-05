@@ -11,3 +11,6 @@ def drop():
     out = {k: v for k, v in (L.split("=", 1) for L in lines) if k in wanted}
     pathlib.Path(COOKIE_FILE).write_text(json.dumps({"Request Cookies": out}))
     return "OK", 200
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=8080)
