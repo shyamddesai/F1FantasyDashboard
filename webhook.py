@@ -3,6 +3,7 @@ import json
 
 app = Flask(__name__)
 COOKIE_FILE = "cookie.json"
+PLAYERS_FILE = "players.json"
 
 @app.route("/cookies", methods=["POST"])
 def cookies():
@@ -13,6 +14,18 @@ def cookies():
         with open(COOKIE_FILE, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2)
 
+        return jsonify({"status": "success"}), 200
+    except Exception as e:
+        print("Error processing JSON:", e)
+        print(f"Raw payload: {request.data}")
+        return jsonify({"status": "error", "message": str(e)}), 400
+    
+@app.route("/players", methods=["POST"])
+def players():
+    try:
+        data = request.get_json(force=True)
+        with open(PLAYERS_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
         return jsonify({"status": "success"}), 200
     except Exception as e:
         print("Error processing JSON:", e)
